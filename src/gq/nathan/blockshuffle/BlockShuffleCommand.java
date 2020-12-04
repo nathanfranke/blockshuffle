@@ -24,14 +24,16 @@ public class BlockShuffleCommand implements CommandExecutor, TabCompleter {
 		if(args.length > 0) {
 			switch (args[0].toLowerCase()) {
 				case "start": {
+					sender.sendMessage(ChatColor.GREEN + blockShuffle.msg("messages.started"));
 					blockShuffle.start();
 				} return true;
 				case "stop": {
+					sender.sendMessage(ChatColor.GREEN + blockShuffle.msg("messages.stopped"));
 					blockShuffle.stop();
 				} return true;
 			}
 		}
-		sender.sendMessage(blockShuffle.msg("messages.permission_denied", command.getUsage()));
+		sender.sendMessage(ChatColor.RED + blockShuffle.msg("messages.usage", command.getUsage()));
 		return true;
 	}
 	

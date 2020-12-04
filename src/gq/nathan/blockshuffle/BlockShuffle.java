@@ -1,5 +1,6 @@
 package gq.nathan.blockshuffle;
 
+import com.destroystokyo.paper.event.entity.EntityRemoveFromWorldEvent;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import org.bukkit.ChatColor;
@@ -16,6 +17,7 @@ import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -69,7 +71,7 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 	private final Map<Player, Material> playerTargets = new HashMap<>();
 	private final Set<Player> completed = new HashSet<>();
 	
-	private boolean hasStarted;
+	private boolean gameActive;
 	private int roundNumber;
 	private int startTime;
 	
@@ -84,7 +86,7 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 	}
 	
 	public int getTimeElapsed() {
-		if(!hasStarted) {
+		if(!gameActive) {
 			return 0;
 		}
 		int currentTime = getServer().getCurrentTick();
@@ -131,14 +133,6 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 			command.setTabCompleter(executor);
 		}
 		
-		Scoreboard scoreboard = getServer().getScoreboardManager().getMainScoreboard();
-		String objectiveName = "blockshuffle";
-		objective = scoreboard.getObjective(objectiveName);
-		if(objective == null) {
-			objective = scoreboard.registerNewObjective(objectiveName, "dummy", "Score");
-		}
-		objective.setDisplaySlot(DisplaySlot.SIDEBAR);
-		
 		getServer().getScheduler().scheduleSyncRepeatingTask(this, () -> {
 			for(Player p : getPlayers()) {
 				if(isPlaying(p)) {
@@ -161,9 +155,7 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 	}
 	@Override
 	public void onDisable() {
-		for(Player p : getServer().getOnlinePlayers()) {
-			removeBossBar(p);
-		}
+		stop();
 	}
 	
 	public Set<Player> getPlayers() {
@@ -173,18 +165,33 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		return player.hasPermission("blockshuffle.play");
 	}
 	public boolean isPlaying(Player player) {
-		return canPlay(player) && playerTargets.containsKey(player);
+		return canPlay(player) && gameActive && playerTargets.containsKey(player);
 	}
 	public boolean isWorking(Player player) {
 		return isPlaying(player) && !completed.contains(player);
 	}
 	
 	public void start() {
-		hasStarted = true;
+		if(gameActive) {
+			return;
+		}
+		gameActive = true;
 		roundNumber = 0;
+		
+		Scoreboard scoreboard = getServer().getScoreboardManager().getMainScoreboard();
+		String objectiveName = "blockshuffle";
+		objective = scoreboard.getObjective(objectiveName);
+		if(objective == null) {
+			objective = scoreboard.registerNewObjective(objectiveName, "dummy", "Score");
+		}
+		objective.setDisplaySlot(DisplaySlot.SIDEBAR);
 		
 		getServer().broadcastMessage(ChatColor.GREEN + msg("messages.starting", getPlayers().size()));
 		nextRound();
+	}
+	public void cleanUpRound() {
+		playerTargets.clear();
+		completed.clear();
 	}
 	public void nextRound() {
 		++roundNumber;
@@ -192,19 +199,22 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		startTime = getServer().getCurrentTick();
 		
 		for(Player p : getPlayers()) {
-			if(isWorking(p)) {
-				getServer().broadcastMessage(ChatColor.RED + msg("messages.failed", p.getDisplayName()));
-			}
 			Score score = objective.getScore(p.getDisplayName());
 			if(!score.isScoreSet()) {
 				score.setScore(0);
 			}
+			if(isWorking(p)) {
+				getServer().broadcastMessage(ChatColor.RED + msg("messages.failed", p.getDisplayName()));
+			}
 		}
 		
-		playerTargets.clear();
-		completed.clear();
+		cleanUpRound();
 		
 		getServer().getScheduler().scheduleSyncDelayedTask(this, () -> {
+			if(!gameActive) {
+				return;
+			}
+			
 			for(Player p : getPlayers()) {
 				assignBlock(p, Math.min(roundNumber / getConfig().getInt("difficulty_interval"), 2));
 			}
@@ -213,7 +223,19 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		}, 20);
 	}
 	public void stop() {
-		hasStarted = false;
+		if(!gameActive) {
+			return;
+		}
+		cleanUpRound();
+		gameActive = false;
+		
+		for(Player p : getServer().getOnlinePlayers()) {
+			removeBossBar(p);
+			Objects.requireNonNull(objective.getScoreboard()).resetScores(p.getDisplayName());
+		}
+		
+		objective.unregister();
+		objective = null;
 	}
 	
 	public static String getNiceName(Material m) {
@@ -265,6 +287,26 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		}
 	}
 	
+	private final Set<Firework> visualFireworks = new HashSet<>();
+	
+	@EventHandler
+	public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+		if(event.getDamager() instanceof Firework) {
+			Firework firework = (Firework)event.getDamager();
+			if(visualFireworks.contains(firework)) {
+				event.setCancelled(true);
+			}
+		}
+	}
+	
+	@EventHandler
+	public void onEntityRemoveFromWorld(EntityRemoveFromWorldEvent event) {
+		if(event.getEntity() instanceof Firework) {
+			Firework firework = (Firework)event.getEntity();
+			visualFireworks.remove(firework);
+		}
+	}
+	
 	public void completeJob(Player player, Material targetBlock) {
 		completed.add(player);
 		getServer().broadcastMessage(ChatColor.LIGHT_PURPLE + msg("messages.block_found", player.getDisplayName(), getNiceName(targetBlock)));
@@ -276,6 +318,8 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		meta.addEffect(FireworkEffect.builder().withColor(Color.GREEN).flicker(true).build());
 		
 		firework.setFireworkMeta(meta);
+		
+		visualFireworks.add(firework);
 		
 		Score score = objective.getScore(player.getDisplayName());
 		score.setScore(score.getScore() + 1);

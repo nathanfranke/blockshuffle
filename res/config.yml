@@ -2,6 +2,8 @@
 messages:
   permission_denied: You do not have permission to manage BlockShuffle.
   usage: "Usage: %s"
+  started: "Started BlockShuffle"
+  stopped: "Stopped BlockShuffle"
   title: "BlockShuffle Round #%d - %s"
   starting: "BlockShuffle is starting! There are %d players."
   failed: "%s failed to find their block!"
