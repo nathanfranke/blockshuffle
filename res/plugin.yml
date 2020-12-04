@@ -1,0 +1,15 @@
+name: BlockShuffle
+main: gq.nathan.blockshuffle.BlockShuffle
+version: 1.0
+author: nathanfranke
+api-version: 1.13
+commands:
+  blockshuffle:
+    description: BlockShuffle
+    usage: '/blockshuffle [start/stop]'
+permissions:
+  blockshuffle.manage:
+    description: Allows you to start and stop BlockShuffle
+  blockshuffle.play:
+    description: Players with this permission will be added to the game
+    default: true
