@@ -2,6 +2,7 @@ package gq.nathan.blockshuffle;
 
 import com.destroystokyo.paper.event.entity.EntityRemoveFromWorldEvent;
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
@@ -12,6 +13,7 @@ import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.command.PluginCommand;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
@@ -30,7 +32,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class BlockShuffle extends JavaPlugin implements Listener {
-	private final Multimap<Material, Material> alternatives = ArrayListMultimap.create();
+	public final Multimap<Integer, Material> blocks = HashMultimap.create();
+	public boolean accumulateBlocks;
+	
+	public final Multimap<Material, Material> alternatives = ArrayListMultimap.create();
 	{
 		alternatives.put(Material.ACACIA_SIGN, Material.ACACIA_WALL_SIGN);
 		alternatives.put(Material.BIRCH_SIGN, Material.BIRCH_WALL_SIGN);
@@ -126,6 +131,36 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		saveDefaultConfig();
 		
 		{
+			ConfigurationSection blocksSection = getConfig().getConfigurationSection("blocks");
+			if(blocksSection == null) {
+				throw new IllegalStateException("No blocks are configured.");
+			}
+			
+			accumulateBlocks = getConfig().getBoolean("accumulate_blocks");
+			
+			for(String key : blocksSection.getKeys(false)) {
+				int i;
+				try {
+					i = Integer.parseInt(key);
+				} catch(NumberFormatException e) {
+					throw new IllegalStateException(String.format("Invalid round number '%s'", key));
+				}
+				
+				for(String value : blocksSection.getStringList(key)) {
+					Material material;
+					try {
+						material = Material.valueOf(value);
+					} catch(IllegalArgumentException e) {
+						getLogger().warning(String.format("Block '%s' not found. Skipping...", value));
+						continue;
+					}
+					
+					blocks.put(i, material);
+				}
+			}
+		}
+		
+		{
 			PluginCommand command = getCommand("blockshuffle");
 			assert command != null;
 			BlockShuffleCommand executor = new BlockShuffleCommand(this);
@@ -216,7 +251,7 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 			}
 			
 			for(Player p : getPlayers()) {
-				assignBlock(p, Math.min(roundNumber / getConfig().getInt("difficulty_interval"), 2));
+				assignBlock(p);
 			}
 			
 			endTask = getServer().getScheduler().scheduleSyncDelayedTask(this, this::nextRound, roundLength());
@@ -244,30 +279,31 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 				.collect(Collectors.joining(" "));
 	}
 	
-	public void assignBlock(Player p, int difficulty) {
-		Material m = randomBlock(difficulty);
+	public void assignBlock(Player p) {
+		Material m = randomBlock();
 		playerTargets.put(p, m);
 		
 		p.sendMessage(ChatColor.GREEN + msg("messages.block_chosen", getNiceName(m)));
 		getLogger().info(String.format("%s must stand on %s.", p.getName(), m.toString()));
 	}
 	
-	public Material randomBlock(int difficulty) {
-		List<String> options = new ArrayList<>();
-		switch (difficulty) {
-			case 2: {
-				options.addAll(getConfig().getStringList("end_game_blocks"));
-			}
-			case 1: {
-				options.addAll(getConfig().getStringList("mid_game_blocks"));
-			}
-			case 0: {
-				options.addAll(getConfig().getStringList("early_game_blocks"));
-			}
+	public Material randomBlock() {
+		List<Material> options = new ArrayList<>();
+		
+		for(int key : new TreeSet<>(blocks.keySet())) {
+			if(roundNumber >= key) {
+				if(!accumulateBlocks) {
+					options.clear();
+				}
+				options.addAll(blocks.get(key));
+			} else break;
 		}
-		assert options.size() > 0;
-		String item = options.get((int)(Math.random() * options.size()));
-		return Material.valueOf(item);
+		
+		if(options.size() <= 0) {
+			throw new IllegalStateException("No available blocks. There must be a configuration key for round one.");
+		}
+		
+		return options.get((int)(Math.random() * options.size()));
 	}
 	
 	@EventHandler
