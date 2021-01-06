@@ -228,13 +228,14 @@ public class BlockShuffle extends JavaPlugin implements Listener {
 		playerTargets.clear();
 		completed.clear();
 	}
+	@SuppressWarnings("deprecation")
 	public void nextRound() {
 		++roundNumber;
 		
 		startTime = getServer().getCurrentTick();
 		
 		for(Player p : getPlayers()) {
-			Score score = objective.getScore(p.getDisplayName());
+			Score score = objective.getScore(p);
 			if(!score.isScoreSet()) {
 				score.setScore(0);
 			}
