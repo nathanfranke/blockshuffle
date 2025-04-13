@@ -1,3 +1,5 @@
+# ⚠️ Archived - This project is no longer maintained
+
 # [BlockShuffle for Spigot 1.16.4](https://www.spigotmc.org/resources/blockshuffle.86399/)
 
 <img src="https://www.spigotmc.org/attachments/blockshuffle-jpg.574595/">
